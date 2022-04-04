@@ -15,18 +15,21 @@ from torch.utils.data import random_split
 from transformers import set_seed, is_wandb_available, BertTokenizerFast, HfArgumentParser, BertConfig, BertModel, \
     WEIGHTS_NAME, BertForSequenceClassification
 
+import sys
+sys.path.insert(1, "/home/zakizadeh/bias-probing/bias_probing")
+
 import config as project_config
-from bias_probing.data.caching import get_cached_dataset, embed_and_cache
-from bias_probing.data.datasets import load_dataset_aux, DatasetInfo
-from bias_probing.heuristics import sentence_to_words, have_lexical_overlap, is_subsequence
-from bias_probing.mdl import OnlineCodeMDLProbe
-from bias_probing.modelling import BertWithWeakLearner, BertWithExplicitBias
-from bias_probing.utils.ngrams import ngram_contained
+from data.caching import get_cached_dataset, embed_and_cache
+from data.datasets import load_dataset_aux, DatasetInfo
+from heuristics import sentence_to_words, have_lexical_overlap, is_subsequence
+from mdl import OnlineCodeMDLProbe
+from modelling import BertWithWeakLearner, BertWithExplicitBias
+from utils.ngrams import ngram_contained
 
 # Faster tokenizer for optimization
 tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
 
-
+TOP_DIR = "/home/zakizadeh/bias-probing"
 ONLINE_CODE_PROJECT_NAME = 'online-code'
 
 
@@ -210,6 +213,26 @@ class LexClassMapper:
         examples['probing_label'] = [label_fn(premise, hypothesis) for premise, hypothesis in zip(prem_list, hypo_list)]
         return examples
 
+class GroupIdentifierMapper:
+    # noinspection PyUnusedLocal
+    def __init__(self, identifiers_vocab=None, n=1, **kwargs):
+        self.identifiers_vocab = [tuple(tokenizer.tokenize(exp)) for exp in identifiers_vocab]
+        print(self.identifiers_vocab)
+        self.n = n
+        # self.hypothesis_key = hypothesis_key
+
+    def __call__(self, examples):
+        ngrams = self.identifiers_vocab
+        n = self.n
+
+        # hypothesis = examples[self.hypothesis_key]
+        hypo_words = [sentence_to_words(h) for h in examples['text']]
+        probing_label = [int(any(ngram_contained(words, bi, n) for bi in ngrams)) for words in hypo_words]
+        return {
+            **examples,
+            'probing_label': probing_label
+        }
+
 
 def get_mapper(config: TaskConfig, dataset_info: DatasetInfo):
     if config.type == 'lex-class':
@@ -218,6 +241,8 @@ def get_mapper(config: TaskConfig, dataset_info: DatasetInfo):
                               hypothesis_key=dataset_info.sentence2_key)
     elif config.type == 'neg-words':
         return NegWordsMapper(**config.mapper_kwargs, hypothesis_key=dataset_info.sentence2_key)
+    elif config.type == 'identifier-words':
+        return GroupIdentifierMapper(**config.mapper_kwargs)
     raise ValueError(f'Unsupported config type {config.type}')
 
 
@@ -250,26 +275,34 @@ def prepare_dataset(args: ExperimentArguments, config: TaskConfig, _embed_and_ca
     model_name_or_path = args.model_name_or_path
     max_seq_length = args.max_seq_length
     batch_size = args.batch_size
-    hypo_only = config.mapper_kwargs.pop('hypothesis_only', False)
-    premise_key = dataset_info.sentence1_key
-    hypothesis_key = dataset_info.sentence2_key
+    # hypo_only = config.mapper_kwargs.pop('hypothesis_only', False)
+    # premise_key = dataset_info.sentence1_key
+    # hypothesis_key = dataset_info.sentence2_key
     task_mapper = get_mapper(config, dataset_info)
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
     encoder = build_encoder(model_name_or_path)[0]
+
+    # def preprocess_function(examples):
+    #     # Tokenize the texts
+    #     premise = examples[premise_key]  # List
+    #     hypothesis = examples[hypothesis_key]  # List
+
+    #     result = examples
+    #     if hypo_only:
+    #         result.update(
+    #             tokenizer(hypothesis, padding='max_length', max_length=max_seq_length, truncation=True))
+    #     else:
+    #         result.update(
+    #             tokenizer(premise, hypothesis, padding='max_length', max_length=max_seq_length, truncation=True))
+    #     return task_mapper(result)
 
     def preprocess_function(examples):
         # Tokenize the texts
-        premise = examples[premise_key]  # List
-        hypothesis = examples[hypothesis_key]  # List
-
+        # premise = examples[premise_key]  # List
+        # hypothesis = examples[hypothesis_key]  # List
         result = examples
-        if hypo_only:
-            result.update(
-                tokenizer(hypothesis, padding='max_length', max_length=max_seq_length, truncation=True))
-        else:
-            result.update(
-                tokenizer(premise, hypothesis, padding='max_length', max_length=max_seq_length, truncation=True))
+        result.update(tokenizer(examples['text'], padding='max_length', max_length=max_seq_length, truncation=True))
         return task_mapper(result)
 
     mapped_ds = ds.map(preprocess_function, batched=True, load_from_cache_file=not overwrite_cache)

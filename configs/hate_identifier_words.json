@@ -1,0 +1,35 @@
+{
+    "name": "hate-identifier-words",
+    "type": "identifier-words",
+    "dataset_name": "gab",
+    "kwargs": {
+      "identifiers_vocab": [
+        "muslim",
+        "jew",
+        "jews",
+        "white",
+        "islam",
+        "blacks",
+        "muslims",
+        "women",
+        "whites",
+        "gay",
+        "black",
+        "democrat",
+        "islamic",
+        "allah",
+        "jewish",
+        "lesbian",
+        "transgender",
+        "race",
+        "brown",
+        "woman",
+        "mexican",
+        "religion",
+        "homosexual",
+        "homosexuality",
+        "africans"
+      ],
+      "n": 1
+    }
+  }

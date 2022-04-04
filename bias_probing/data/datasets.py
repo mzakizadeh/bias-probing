@@ -72,6 +72,9 @@ DATASETS = {
     ),
     'snli_hard': DatasetInfo(
         dataset_config_file='snli_hard.py'
+    ),
+    'gab': DatasetInfo(
+        dataset_config_file='gab.py'
     )
 }
 

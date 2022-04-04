@@ -70,3 +70,5 @@ scripts/training_no_trainer.py
 
 results/
 slurm/
+
+SETUP.md
